@@ -62,7 +62,7 @@ flowview list      # lists the flows it can find
 flowview
 
 # View any folder of flow JSON (flow.json + subflow .json + optional .md):
-flowview ~/Downloads/iwos3-flows
+flowview ~/Downloads/my-flows
 
 # Options
 flowview <dir> --port 8787 --host 127.0.0.1 --open=false
@@ -81,11 +81,11 @@ flowview list [dir]              # list the flows found in a folder/store
 
 ```sh
 # On your machine (Omarchy, where the flowc store lives):
-flowview pack iwos3 -o ~/send/iwos3
+flowview pack my-flow -o ~/send/my-flow
 
-# Send ~/send/iwos3 to your friend. On their machine, install flowview once
+# Send ~/send/my-flow to your friend. On their machine, install flowview once
 # (see Install above — just the release binary), then:
-flowview ~/send/iwos3
+flowview ~/send/my-flow
 ```
 
 `pack` copies the project's `flow.json`, every subflow JSON, and the `.md`
