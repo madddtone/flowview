@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flow Viewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="header">
+    <span class="logo">&#8883;</span>
+    <span id="title">Flow Viewer</span>
+    <span id="stats" class="muted"></span>
+    <button id="projectsBtn" class="chip">Projects <b id="projectsCount">0</b></button>
+    <button id="findBtn" class="chip">Find <kbd>/</kbd></button>
+    <span id="repo" class="muted ellipsis"></span>
+    <span id="modeChip" class="chip accent hidden"></span>
+    <span class="spacer"></span>
+    <button id="themeBtn" class="chip" title="Toggle light/dark">&#9680;</button>
+  </header>
+
+  <div id="navBar" class="hidden"></div>
+
+  <div id="viewport">
+    <div id="world">
+      <svg id="edges" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="nodesLayer"></div>
+    </div>
+  </div>
+
+  <div id="empty" class="hidden">
+    <div class="emptyIcon">&#11034;</div>
+    <div class="emptyTitle" id="emptyTitle">No flow loaded</div>
+    <div class="emptyHint" id="emptyHint"></div>
+  </div>
+
+  <aside id="inspector" class="hidden"></aside>
+
+  <div id="searchWrap" class="modal hidden">
+    <input id="searchInput" placeholder="Find a node by id, title, actor or tag&hellip;" autocomplete="off" spellcheck="false">
+    <div id="searchResults"></div>
+    <div class="modalHint">&#8593;/&#8595; move &middot; enter open &middot; esc close</div>
+  </div>
+
+  <div id="projectsWrap" class="modal hidden">
+    <div class="modalTitle">Projects</div>
+    <div id="projectsList"></div>
+    <div class="modalHint">&#8593;/&#8595; move &middot; enter open &middot; esc close</div>
+  </div>
+
+  <footer id="footer">
+    click: trace &middot; drag node: move &middot; drag bg: pan &middot; dbl-click subflow: open &middot; d: next/full &middot; /: find &middot; p: projects &middot; r: reset layout &middot; f: fit &middot; scroll: zoom
+  </footer>
+
+  <script src="model.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
