@@ -9,12 +9,50 @@ of JSON, they run one command, and it opens in their browser.
 
 ## Install
 
-Prebuilt binaries are on the GitHub Releases page. Or build from source:
+`flowview` is a single self-contained binary — no runtime, no dependencies.
+
+### Option A — download a release (no toolchain)
+
+Grab the build for your OS/arch from the
+[Releases page](https://github.com/madddtone/flowview/releases):
+
+| OS | Asset |
+|----|-------|
+| Linux | `flowview_linux_amd64` (or `..._arm64`) |
+| macOS | `flowview_darwin_amd64` (Intel) / `flowview_darwin_arm64` (Apple Silicon) |
+| Windows | `flowview_windows_amd64.exe` |
+
+Install it on your PATH:
+
+```sh
+# macOS / Linux
+chmod +x flowview_linux_amd64
+mkdir -p ~/.local/bin
+mv flowview_linux_amd64 ~/.local/bin/flowview
+# ~/.local/bin is on PATH on Omarchy/Arch; otherwise add it to your shell rc
+```
+
+```powershell
+# Windows (PowerShell)
+mkdir $HOME\bin -Force
+move flowview_windows_amd64.exe $HOME\bin\flowview.exe
+# then add %USERPROFILE%\bin to PATH, or run it from that folder
+```
+
+### Option B — build from source (Go 1.21+)
 
 ```sh
 go install github.com/madddtone/flowview/cmd/flowview@latest
-# or
-make install   # -> ~/.local/bin/flowview
+
+# from a clone, installs to ~/.local/bin/flowview
+make install
+```
+
+### Verify
+
+```sh
+flowview version   # -> flowview 0.1.0
+flowview list      # lists the flows it can find
 ```
 
 ## Use
@@ -45,7 +83,8 @@ flowview list [dir]              # list the flows found in a folder/store
 # On your machine (Omarchy, where the flowc store lives):
 flowview pack iwos3 -o ~/send/iwos3
 
-# Send ~/send/iwos3 to your friend. On their machine:
+# Send ~/send/iwos3 to your friend. On their machine, install flowview once
+# (see Install above — just the release binary), then:
 flowview ~/send/iwos3
 ```
 
