@@ -109,6 +109,8 @@ machine just works. Subflows (`flow: ./x.md`) are loaded from the sibling
 ## Features
 
 - Deterministic layered render straight from the compiled `flow.json` `rect`s.
+- **Table nodes** (`type: table`) render a header + columns with PK/FK badges —
+  the first 5 key columns on the node, all of them in the inspector.
 - Click a node to trace its routes; `d` widens to the full downstream subgraph;
   upstream nodes stay faintly lit.
 - Inspector popup with all attributes and the prose sections

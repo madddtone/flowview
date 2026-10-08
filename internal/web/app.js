@@ -254,10 +254,12 @@
 
   function buildNodeEl(n) {
     var div = document.createElement('div')
-    div.className = 'node type-' + n.type + (isTerminal(n) ? ' terminal' : '') + (n.type === 'decision' ? ' decision' : '')
+    div.className = 'node type-' + n.type + (isTerminal(n) ? ' terminal' : '') + (n.type === 'decision' ? ' decision' : '') + (n.type === 'table' ? ' table' : '')
     div.dataset.id = n.id
     div.style.width = n.rect.w + 'px'
     div.style.height = n.rect.h + 'px'
+
+    if (n.type === 'table') return buildTableEl(div, n)
 
     var shape = document.createElement('div')
     shape.className = n.type === 'decision' ? 'diamond' : 'card'
@@ -278,6 +280,41 @@
     }
     div.appendChild(shape); div.appendChild(stripe); div.appendChild(content)
 
+    var hover = document.createElement('div'); hover.className = 'hoverArea'
+    div.appendChild(hover)
+    wireNode(n, div, hover)
+    return div
+  }
+
+  function buildTableEl(div, n) {
+    var card = document.createElement('div'); card.className = 'card'
+    var head = document.createElement('div'); head.className = 'thead'
+    var name = document.createElement('span'); name.className = 'tname'; name.textContent = n.title || n.id
+    head.appendChild(name)
+    if (n.schema) { var sc = document.createElement('span'); sc.className = 'tschema'; sc.textContent = n.schema; head.appendChild(sc) }
+    card.appendChild(head)
+
+    var cols = FM.displayColumns(n.columns, 5)
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i]
+      var row = document.createElement('div'); row.className = 'trow'
+      var cn = document.createElement('span'); cn.className = 'tcol'; cn.textContent = c.name
+      row.appendChild(cn)
+      var right = document.createElement('span'); right.className = 'tright'
+      if (c.pk) { var pk = document.createElement('span'); pk.className = 'badge'; pk.textContent = 'PK'; right.appendChild(pk) }
+      if (c.fk) { var fk = document.createElement('span'); fk.className = 'badge'; fk.textContent = 'FK'; right.appendChild(fk) }
+      if (c.type) { var ty = document.createElement('span'); ty.className = 'ttype'; ty.textContent = c.type; right.appendChild(ty) }
+      row.appendChild(right)
+      card.appendChild(row)
+    }
+    var total = n.columns ? n.columns.length : 0
+    if (total > cols.length) {
+      var hid = total - cols.length
+      var more = document.createElement('div'); more.className = 'tmore'
+      more.textContent = '+' + hid + ' more column' + (hid === 1 ? '' : 's') + ' (see details)'
+      card.appendChild(more)
+    }
+    div.appendChild(card)
     var hover = document.createElement('div'); hover.className = 'hoverArea'
     div.appendChild(hover)
     wireNode(n, div, hover)
@@ -397,6 +434,18 @@
     if (n.subflow) rows.push(['Subflow', n.subflow])
     for (var i = 0; i < rows.length; i++)
       h.push('<div class="row"><div class="k">' + esc(rows[i][0]) + '</div><div class="v">' + esc(rows[i][1]) + '</div></div>')
+    if (n.columns && n.columns.length) {
+      h.push('<div class="secLabel">Columns <span class="muted">(' + n.columns.length + ')</span></div>')
+      h.push('<table class="cols"><tbody>')
+      for (var c = 0; c < n.columns.length; c++) {
+        var col = n.columns[c]
+        var marks = (col.pk ? '<span class="tbadge">PK</span>' : '') +
+          (col.fk ? '<span class="tbadge">FK ' + esc(col.fk) + '</span>' : '') +
+          (col.nullable === false ? '<span class="tbadge mut">NOT NULL</span>' : '')
+        h.push('<tr><td class="cname">' + esc(col.name) + '</td><td class="ctype">' + esc(col.type || '') + '</td><td class="cmark">' + marks + '</td></tr>')
+      }
+      h.push('</tbody></table>')
+    }
     var order = n.sectionOrder || []
     if (order.length) {
       h.push('<hr>')
