@@ -117,6 +117,8 @@ machine just works. Subflows (`flow: ./x.md`) are loaded from the sibling
   (Logic, Requirements, Prerequisites, Inputs, Outputs, Failure Modes, Notes).
 - Subflow drill-in (double-click / Enter / inspector button) with a breadcrumb.
 - Zoom (scroll), pan (drag background), node drag, `f` fit, `r` reset layout.
+- **Export PNG** — writes the whole diagram (not just the viewport) to a
+  high-resolution PNG, with a title header and the current trace preserved.
 - Search (`/`), project picker (`p`), light/dark theme.
 
 | Key / input | Action |
@@ -130,6 +132,17 @@ machine just works. Subflows (`flow: ./x.md`) are loaded from the sibling
 | `f` `r` `0` | fit / reset layout / reset zoom |
 | `/` `p` | find node / project picker |
 | `q` | close the window |
+
+## Export an image
+
+Click **Export PNG** in the header. It renders the **entire diagram** to an
+offscreen canvas at 2× resolution (scaled down only for very large graphs, max
+~12000 px), preserving selection/trace highlighting and edge data labels, then
+downloads `<flow-name>.png`. The image includes a title header and node/edge
+counts, so it can be shared on its own.
+
+For automation/screenshots, `?p=<flow>&preview=1` renders the export in the page
+instead of downloading it.
 
 ## Develop
 

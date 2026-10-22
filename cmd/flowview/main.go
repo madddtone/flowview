@@ -19,7 +19,7 @@ import (
 	"github.com/madddtone/flowview/internal/server"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	args := os.Args[1:]

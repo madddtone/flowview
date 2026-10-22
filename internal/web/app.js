@@ -131,7 +131,9 @@
       var want = params.get('p')
       state.wantNode = params.get('node')
       var chosen = want ? state.projects.find(function (p) { return p.jsonPath === want || p.id === want }) : null
-      loadProject(chosen || state.projects[0])
+      var load = loadProject(chosen || state.projects[0])
+      if (new URLSearchParams(location.search).get('preview') === '1')
+        load.then(function () { setTimeout(exportPng, 300) })
     }).catch(function (e) {
       showEmpty('Cannot load flows', String(e.message || e))
     })
@@ -153,7 +155,7 @@
     $('title').textContent = p.name || p.id
     $('repo').textContent = p.repo || ''
     $('inspector').classList.add('hidden')
-    loadFlow(p.jsonPath)
+    return loadFlow(p.jsonPath)
   }
 
   function loadFlow(path, keepTitle) {
@@ -598,6 +600,7 @@
     $('projectsBtn').onclick = openProjects
     $('findBtn').onclick = openSearch
     $('themeBtn').onclick = toggleTheme
+    $('exportBtn').onclick = exportPng
 
     var si = $('searchInput')
     si.addEventListener('input', function () { runSearch(si.value) })
@@ -748,6 +751,309 @@
     var t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
     applyTheme(t)
     localStorage.setItem('flowview-theme', t)
+  }
+
+  // ---------------------------------------------------------------- export
+  var FONT = 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace'
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  }
+  function exportColors() {
+    return {
+      bg: cssVar('--bg') || '#101428',
+      fg: cssVar('--fg') || '#f2f4f8',
+      muted: cssVar('--muted') || '#8b93a7',
+      accent: cssVar('--accent') || '#1e90ff',
+      urgent: cssVar('--urgent') || '#a55555',
+      node: cssVar('--node') || '#171b34',
+      border: cssVar('--border') || 'rgba(242,244,248,0.3)',
+      table: cssVar('--table') || '#4ec9b0'
+    }
+  }
+  function roundRectPath(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2))
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
+    ctx.closePath()
+  }
+  function diamondPath(ctx, x, y, w, h) {
+    ctx.beginPath()
+    ctx.moveTo(x + w / 2, y + 4)
+    ctx.lineTo(x + w - 4, y + h / 2)
+    ctx.lineTo(x + w / 2, y + h - 4)
+    ctx.lineTo(x + 4, y + h / 2)
+    ctx.closePath()
+  }
+  function ellipsize(ctx, text, maxW) {
+    text = String(text == null ? '' : text)
+    if (ctx.measureText(text).width <= maxW) return text
+    var lo = 0, hi = text.length
+    while (lo < hi) {
+      var mid = Math.ceil((lo + hi) / 2)
+      if (ctx.measureText(text.slice(0, mid) + '…').width <= maxW) lo = mid; else hi = mid - 1
+    }
+    return text.slice(0, lo) + '…'
+  }
+  function wrapLines(ctx, text, maxW, maxLines) {
+    var words = String(text || '').split(/\s+/)
+    var lines = [], i = 0
+    while (i < words.length && lines.length < maxLines) {
+      var line = words[i++]
+      while (i < words.length) {
+        var t = line + ' ' + words[i]
+        if (ctx.measureText(t).width > maxW) break
+        line = t; i++
+      }
+      if (lines.length === maxLines - 1 && i < words.length) {
+        line = ellipsize(ctx, line + ' ' + words.slice(i).join(' '), maxW)
+        i = words.length
+      }
+      lines.push(line)
+    }
+    return lines.length ? lines : ['']
+  }
+  function ringFor(level, C) {
+    if (level === 'selected') return { color: C.accent, width: 3, alpha: 1 }
+    if (level === 'successor') return { color: C.accent, width: 2.4, alpha: 1 }
+    if (level === 'downstream') return { color: C.accent, width: 2.2, alpha: 0.85 }
+    if (level === 'ancestor') return { color: C.accent, width: 2, alpha: 0.55 }
+    return { color: C.border, width: 1, alpha: 1 }
+  }
+  function typeAccent(n, C) {
+    if (n.type === 'external') return C.muted
+    if (n.type === 'table') return C.table
+    return C.fg
+  }
+  function drawBadgeEx(ctx, label, rightX, midY, C) {
+    ctx.save()
+    ctx.font = 'bold 7px ' + FONT
+    var w = ctx.measureText(label).width + 6
+    roundRectPath(ctx, rightX - w, midY - 6, w, 12, 3)
+    ctx.globalAlpha *= 0.22; ctx.fillStyle = C.table; ctx.fill()
+    ctx.globalAlpha /= 0.22
+    ctx.fillStyle = C.table; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(label, rightX - w / 2, midY + 0.5)
+    ctx.restore()
+    return w
+  }
+
+  function drawEdgeEx(ctx, e, C) {
+    var s = effRect(e.from), t = effRect(e.to)
+    if (!s || !t) return
+    var geom = FM.edgeGeometry(s, t, e.back === true)
+    var lvl = edgeLevel(e)
+    var alpha = lvl === 'dim' ? 0.12 : 1
+    var color = (lvl === 'hot' || lvl === 'up') ? C.accent : C.fg
+    var width = lvl === 'hot' ? 3 : (lvl === 'up' ? 1.8 : 1.4)
+    var strength = lvl === 'up' ? 0.55 : (lvl === 'hot' ? 1 : 0.32)
+    ctx.save()
+    ctx.globalAlpha = alpha * strength
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'
+    ctx.beginPath(); ctx.moveTo(geom.x1, geom.y1)
+    ctx.bezierCurveTo(geom.c1x, geom.c1y, geom.c2x, geom.c2y, geom.x2, geom.y2)
+    ctx.stroke()
+    var ar = FM.arrow(geom, 11)
+    ctx.beginPath(); ctx.moveTo(ar.tipX, ar.tipY); ctx.lineTo(ar.leftX, ar.leftY)
+    ctx.lineTo(ar.rightX, ar.rightY); ctx.closePath()
+    ctx.fillStyle = color; ctx.fill()
+    ctx.restore()
+
+    var txt = (e.label && e.label.length) ? e.label : (e.when ? 'when ' + e.when : '')
+    if (!txt || lvl === 'dim') return
+    var mx = (geom.c1x + geom.c2x) / 2, my = (geom.c1y + geom.c2y) / 2
+    ctx.save()
+    ctx.font = '9px ' + FONT
+    var w = ctx.measureText(txt).width
+    ctx.globalAlpha = 0.92; ctx.fillStyle = C.bg
+    roundRectPath(ctx, mx - w / 2 - 4, my - 7, w + 8, 14, 4); ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.fillStyle = (lvl === 'hot' || lvl === 'up') ? C.accent : C.muted
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(txt, mx, my)
+    ctx.restore()
+  }
+
+  function drawNodeEx(ctx, n, C) {
+    var r = effRect(n.id)
+    if (!r) return
+    var level = nodeLevel(n.id)
+    var dim = state.selectedId && level === 'normal'
+    ctx.save()
+    ctx.globalAlpha = dim ? 0.22 : 1
+    if (n.type === 'table') drawTableEx(ctx, n, r, level, C)
+    else if (n.type === 'decision') drawDecisionEx(ctx, n, r, level, C)
+    else drawCardEx(ctx, n, r, level, C)
+    ctx.restore()
+  }
+
+  function drawCardEx(ctx, n, r, level, C) {
+    var terminal = isTerminal(n)
+    var ring = ringFor(level, C)
+    ctx.save()
+    ctx.globalAlpha *= ring.alpha
+    roundRectPath(ctx, r.x, r.y, r.w, r.h, terminal ? r.h / 2 : 12)
+    ctx.fillStyle = C.node; ctx.fill()
+    ctx.strokeStyle = ring.color; ctx.lineWidth = ring.width; ctx.stroke()
+    ctx.restore()
+
+    if (!terminal) {
+      ctx.save()
+      ctx.fillStyle = typeAccent(n, C)
+      roundRectPath(ctx, r.x + 7, r.y + 11, 4, r.h - 22, 2); ctx.fill()
+      ctx.restore()
+    }
+
+    var left = r.x + (terminal ? 20 : 16), right = r.x + r.w - (terminal ? 20 : 16)
+    var maxW = right - left, cx = r.x + r.w / 2
+    var bottom = r.y + r.h - 9
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+    ctx.fillStyle = C.fg; ctx.font = 'bold 13px ' + FONT
+    var lines = wrapLines(ctx, n.title || n.id, maxW, terminal ? 1 : 2)
+    var ty = r.y + 9
+    for (var i = 0; i < lines.length; i++) { ctx.fillText(lines[i], cx, ty); ty += 15 }
+    ctx.fillStyle = C.muted; ctx.font = '9px ' + FONT
+    ctx.fillText(ellipsize(ctx, n.id, maxW), cx, ty + 1)
+
+    var sub = hasSubflow(n)
+    if (sub) {
+      var sh = 15, sy = bottom - sh
+      ctx.save(); ctx.globalAlpha *= 0.2; ctx.fillStyle = C.accent
+      roundRectPath(ctx, left, sy, maxW, sh, 4); ctx.fill(); ctx.restore()
+      ctx.fillStyle = C.accent; ctx.font = '8px ' + FONT
+      ctx.textBaseline = 'middle'
+      ctx.fillText('\u21b3 open subflow · ' + (n.subflowNodes || 0), cx, sy + sh / 2)
+    }
+    var meta = metaText(n)
+    if (meta) {
+      var mb = sub ? bottom - 15 - 3 : bottom
+      ctx.fillStyle = C.muted; ctx.font = '9px ' + FONT
+      ctx.textBaseline = 'bottom'
+      ctx.fillText(ellipsize(ctx, meta, maxW), cx, mb)
+    }
+  }
+
+  function drawDecisionEx(ctx, n, r, level, C) {
+    var ring = ringFor(level, C)
+    ctx.save()
+    ctx.globalAlpha *= ring.alpha
+    diamondPath(ctx, r.x, r.y, r.w, r.h)
+    ctx.fillStyle = C.node; ctx.fill()
+    ctx.strokeStyle = ring.color; ctx.lineWidth = ring.width; ctx.stroke()
+    ctx.restore()
+
+    var maxW = r.w - 68, cx = r.x + r.w / 2
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+    ctx.fillStyle = C.fg; ctx.font = 'bold 12px ' + FONT
+    var lines = wrapLines(ctx, n.title || n.id, maxW, 2)
+    var total = lines.length * 14 + 12
+    var ty = r.y + r.h / 2 - total / 2
+    for (var i = 0; i < lines.length; i++) { ctx.fillText(lines[i], cx, ty); ty += 14 }
+    ctx.fillStyle = C.muted; ctx.font = '9px ' + FONT
+    ctx.fillText(ellipsize(ctx, n.id, maxW), cx, ty + 1)
+  }
+
+  function drawTableEx(ctx, n, r, level, C) {
+    var ring = ringFor(level, C)
+    ctx.save()
+    roundRectPath(ctx, r.x, r.y, r.w, r.h, 12)
+    ctx.save(); ctx.clip()
+    ctx.fillStyle = C.node; ctx.fill()
+    ctx.save(); ctx.globalAlpha *= 0.18; ctx.fillStyle = C.table
+    ctx.fillRect(r.x, r.y, r.w, 24)
+    ctx.restore()
+    ctx.fillStyle = C.table
+    ctx.fillRect(r.x, r.y + 23, r.w, 1)
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left'
+    ctx.fillStyle = C.fg; ctx.font = 'bold 11px ' + FONT
+    ctx.fillText(ellipsize(ctx, n.title || n.id, r.w - 70), r.x + 8, r.y + 12)
+    if (n.schema) {
+      ctx.fillStyle = C.muted; ctx.font = '9px ' + FONT; ctx.textAlign = 'right'
+      ctx.fillText(n.schema, r.x + r.w - 8, r.y + 12)
+    }
+    var cols = FM.displayColumns(n.columns, 5)
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i]
+      var mid = r.y + 24 + i * 18 + 9
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+      ctx.fillStyle = C.fg; ctx.font = '10px ' + FONT
+      ctx.fillText(ellipsize(ctx, c.name, r.w * 0.5 - 12), r.x + 8, mid)
+      var rx = r.x + r.w - 8
+      if (c.type) {
+        ctx.textAlign = 'right'; ctx.fillStyle = C.muted; ctx.font = '9px ' + FONT
+        ctx.fillText(c.type, rx, mid)
+        rx -= ctx.measureText(c.type).width + 6
+      }
+      if (c.fk) rx -= drawBadgeEx(ctx, 'FK', rx, mid, C) + 4
+      if (c.pk) rx -= drawBadgeEx(ctx, 'PK', rx, mid, C) + 4
+    }
+    var total = n.columns ? n.columns.length : 0
+    if (total > cols.length) {
+      var hid = total - cols.length
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillStyle = C.muted; ctx.font = '8px ' + FONT
+      ctx.fillText('+' + hid + ' more column' + (hid === 1 ? '' : 's') + ' (see details)',
+        r.x + r.w / 2, r.y + 24 + cols.length * 18 + 8)
+    }
+    ctx.restore()
+    roundRectPath(ctx, r.x, r.y, r.w, r.h, 12)
+    ctx.strokeStyle = ring.color; ctx.lineWidth = ring.width; ctx.globalAlpha *= ring.alpha; ctx.stroke()
+    ctx.restore()
+  }
+
+  function exportPng() {
+    var g = state.graph
+    if (!g || !g.nodes.length) return
+    var C = exportColors()
+    var b = effBounds()
+    var pad = 70, headerH = 54
+    var worldW = b.width + pad * 2
+    var worldH = b.height + pad * 2 + headerH
+    var scale = Math.max(1, Math.min(2, 12000 / Math.max(worldW, worldH)))
+    var canvas = document.createElement('canvas')
+    canvas.width = Math.round(worldW * scale)
+    canvas.height = Math.round(worldH * scale)
+    var ctx = canvas.getContext('2d')
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.save(); ctx.scale(scale, scale)
+
+    var title = state.viewTitle || $('title').textContent
+    ctx.fillStyle = C.accent; ctx.font = 'bold 18px ' + FONT
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+    ctx.fillText('\u22b3', pad, 30)
+    ctx.fillStyle = C.fg
+    ctx.fillText(title, pad + 26, 31)
+    ctx.fillStyle = C.muted; ctx.font = '11px ' + FONT
+    ctx.fillText(g.nodes.length + ' nodes · ' + g.edges.length + ' edges', pad + 26, 48)
+
+    ctx.translate(pad - b.minX, pad + headerH - b.minY)
+    for (var i = 0; i < g.edges.length; i++) drawEdgeEx(ctx, g.edges[i], C)
+    for (var j = 0; j < g.nodes.length; j++) drawNodeEx(ctx, g.nodes[j], C)
+    ctx.restore()
+
+    var q = new URLSearchParams(location.search)
+    if (q.get('preview') === '1') {
+      document.body.innerHTML = ''
+      document.body.style.background = C.bg
+      canvas.style.maxWidth = '100%'
+      canvas.style.height = 'auto'
+      document.body.appendChild(canvas)
+      return
+    }
+    var slug = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'flow'
+    canvas.toBlob(function (blob) {
+      if (!blob) return
+      var a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = slug + '.png'
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(function () { URL.revokeObjectURL(a.href) }, 2000)
+    }, 'image/png')
   }
 
   document.addEventListener('DOMContentLoaded', boot)
